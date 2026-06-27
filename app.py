@@ -63,7 +63,7 @@ def generate_trivia_html(rounds_info):
     .answer-table th.num-col { width: 12%; text-align: center; }
     .answer-table th.music-col { width: 44%; }
     .answer-row { page-break-inside: avoid; }
-    .answer-row td { padding: 3px 5px; font-size: 8.5pt; border-bottom: 1px solid #cbd5e0; line-height: 1.2; height: 18px; }
+    .answer-row td { padding: 3px 5px; font-size: 8.5pt; border-bottom: 1px solid #cbd5e0; line-height: 1.2; height: 24px; }
     .answer-row td.q-num { font-weight: bold; color: #000000; text-align: center; background-color: #e2e8f0; border-right: 1px solid #cbd5e0; border-left: 1px solid #cbd5e0; }
     .answer-row td.q-ans, .answer-row td.q-music { border-right: 1px solid #cbd5e0; background-color: #ffffff; }
 </style>
