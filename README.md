@@ -70,14 +70,16 @@ pytest
 The PDF and app tests are skipped automatically if WeasyPrint's system libraries aren't available. The full suite takes about a minute, mostly from rendering worst-case packs in every layout.
 
 ## 📁 Project Layout
-- `app.py`: the Streamlit interface.
-- `app_state.py`: maps a saved setup onto the app's widget keys.
-- `trivia_models.py`: the event and round data model, with JSON save/load and validation.
-- `trivia_html.py`: builds the team-sheet HTML (no Streamlit or WeasyPrint dependency).
-- `trivia_host.py`: builds the scoresheet, answer key and host script HTML.
-- `trivia_questions.py`: parses the questions CSV and writes the template.
-- `trivia_images.py`: shrinks and grayscales uploaded pictures for printing.
-- `trivia_pdf.py`: renders HTML to PDF and pages to preview images, and sets up the Windows DLL lookup.
+- `app.py`: the Streamlit interface (start it with `streamlit run app.py`).
+- `trivia_kit/`: everything else, as an importable package.
+  - `models.py`: the event and round data model, with JSON save/load and validation.
+  - `sheets.py`: builds the team-sheet HTML (no Streamlit or WeasyPrint dependency).
+  - `host.py`: builds the scoresheet, answer key and host script HTML.
+  - `questions.py`: parses the questions CSV and writes the template.
+  - `images.py`: shrinks and grayscales uploaded pictures for printing.
+  - `pdf.py`: renders HTML to PDF and pages to preview images, and sets up the Windows DLL lookup. It is the only module that needs WeasyPrint.
+  - `state.py`: maps a saved setup onto the app's widget keys.
+- `tests/`: one test module per module above, plus `test_app.py` for the interface.
 
 ## 🔒 A note on setup files
 A setup file is untrusted input. Loading one clamps every value to its valid range and accepts only inline (`data:image/...`) pictures, so a file can't make the PDF renderer fetch a local file or a web address.

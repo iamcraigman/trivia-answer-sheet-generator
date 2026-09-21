@@ -4,7 +4,7 @@ import io
 import pytest
 from PIL import Image
 
-from trivia_images import to_data_uri
+from trivia_kit.images import to_data_uri
 
 
 def png(size=(1200, 400), mode="RGB", color=(200, 30, 30)):

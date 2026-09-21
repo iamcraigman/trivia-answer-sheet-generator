@@ -1,7 +1,7 @@
 import pytest
 
-from trivia_html import generate_trivia_html, page_plan, row_height
-from trivia_models import EventConfig, Round
+from trivia_kit.sheets import generate_trivia_html, page_plan, row_height
+from trivia_kit.models import EventConfig, Round
 
 
 def cfg(*rounds, **kw):

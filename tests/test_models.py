@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from trivia_models import LAYOUTS, MAX_NAME_LEN, MAX_ROUNDS, MAX_TEAMS, EventConfig, Round
+from trivia_kit.models import LAYOUTS, MAX_NAME_LEN, MAX_ROUNDS, MAX_TEAMS, EventConfig, Round
 
 DATA_URI = "data:image/jpeg;base64,AAAA"
 

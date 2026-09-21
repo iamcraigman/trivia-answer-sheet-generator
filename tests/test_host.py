@@ -1,6 +1,6 @@
-from trivia_host import generate_answer_key_html, generate_host_script_html, generate_scoresheet_html
-from trivia_models import EventConfig, Round
-from trivia_questions import parse_questions
+from trivia_kit.host import generate_answer_key_html, generate_host_script_html, generate_scoresheet_html
+from trivia_kit.models import EventConfig, Round
+from trivia_kit.questions import parse_questions
 
 ROUNDS = (Round("Geo <b>", questions=2, points=2, extra="tiebreaker"), Round("Music", "music", 1))
 CSV = "round,number,question,answer,notes\n1,1,Q <i>one</i>,A & B,note <x>\n1,2,Q2,A2,\n1,TB,Guess,54,\n"
