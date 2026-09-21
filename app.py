@@ -236,11 +236,11 @@ with setup_box:
 
 # 5. Preview
 st.subheader("5. Preview")
-if st.session_state.get("preview_round", 0) >= len(rounds):
-    st.session_state["preview_round"] = 0
-preview_index = st.selectbox(
-    "Round to preview", options=range(len(rounds)), format_func=lambda i: rounds[i].name, key="preview_round",
-)
+# The browser remembers a selectbox by its displayed label, so the labels must not
+# depend on anything the user edits (a round's name) or a rename breaks the selection.
+# No key either: changing the number of rounds changes the options, which resets it.
+preview_index = st.selectbox("Round to preview", options=range(len(rounds)), format_func=lambda i: f"Round {i + 1}")
+st.caption(f"Previewing: {rounds[preview_index].name}")
 try:
     preview_config = dataclasses.replace(config, questions_csv="")
     st.image(render_preview(json.dumps(preview_config.to_dict()), preview_index), width="stretch")

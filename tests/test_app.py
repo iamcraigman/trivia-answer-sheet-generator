@@ -83,6 +83,31 @@ def test_layout_change_clamps_question_counts():
     assert at.number_input(key="q_0").value == 10
 
 
+def preview_box(at):
+    return next(s for s in at.selectbox if s.label == "Round to preview")
+
+
+def test_preview_selector_labels_do_not_depend_on_round_names():
+    """A browser remembers a selectbox by its displayed label. Labelling the options with
+    round names made the stored selection go stale on a rename and crash the next run
+    (this can't be reproduced by AppTest, which re-sends the value every time)."""
+    at = new_app()
+    assert list(preview_box(at).options) == [f"Round {i}" for i in range(1, 6)]
+    at.text_input(key="name_1").set_value("Renamed").run()
+    assert list(preview_box(at).options) == [f"Round {i}" for i in range(1, 6)]
+
+
+def test_preview_selection_survives_renaming_and_removing_rounds():
+    at = new_app()
+    preview_box(at).set_value(1).run()
+    at.text_input(key="name_1").set_value("Renamed").run()
+    assert not at.exception
+    assert preview_box(at).value == 1
+    at.number_input(key="num_rounds").set_value(1).run()              # the selected round no longer exists
+    assert not at.exception
+    assert preview_box(at).value == 0
+
+
 def test_teams_and_packet_order_reach_the_output():
     at = new_app()
     at.selectbox(key="team_mode").set_value("names").run()
