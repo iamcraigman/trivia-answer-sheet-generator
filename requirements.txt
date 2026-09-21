@@ -1,2 +1,4 @@
-streamlit
-weasyprint
+streamlit>=1.64,<2
+weasyprint>=70,<71
+pillow>=10
+pypdfium2>=5,<6

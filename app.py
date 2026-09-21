@@ -1,136 +1,286 @@
-import os
-# Point WeasyPrint to the MSYS2 library directory
-os.environ['WEASYPRINT_DLL_DIRECTORIES'] = r"C:\msys64\mingw64\bin"
+import dataclasses
+import json
 
 import streamlit as st
-from weasyprint import HTML
 
-st.set_page_config(page_title="Trivia Sheet Generator", layout="centered")
-st.title("🎯 Trivia Answer Sheet Generator")
-st.write("Configure your rounds below to export a perfectly aligned 2x2 grid PDF or HTML markup.")
+from app_state import state_from_config
+from trivia_host import generate_answer_key_html, generate_host_script_html, generate_scoresheet_html
+from trivia_html import generate_trivia_html
+from trivia_images import LOGO_MAX_PX, PICTURE_MAX_PX, to_data_uri
+from trivia_models import (
+    EXTRAS, FORMATS, LAYOUTS, MAX_NAME_LEN, MAX_ROUNDS, MAX_TEAMS, PACKET_ORDERS, PAPERS,
+    TEAM_MODES, EventConfig, Round,
+)
+from trivia_pdf import build_pdf, pdf_to_pngs
+from trivia_questions import parse_questions, template_csv
 
-# 1. Global Event Setup
-num_rounds = st.number_input("How many rounds total?", min_value=1, max_value=10, value=5)
+IMAGE_TYPES = ["png", "jpg", "jpeg", "gif", "webp"]
+PREVIEW_PAGES = 3
 
-rounds_data = []
+DEFAULTS = {
+    "event_title": "", "event_date": "", "event_venue": "",
+    "paper": "Letter", "layout": "4up", "ink_saver": False,
+    "team_mode": "blank", "num_teams": 4, "team_names": "", "packet_order": "packets",
+    "questions_csv": "", "num_rounds": 5,
+}
 
-# 2. Dynamic Input Generation
+
+@st.cache_data(show_spinner=False)
+def process_image(data, max_px):
+    return to_data_uri(data, max_px)
+
+
+@st.cache_data(show_spinner="Rendering preview…", max_entries=20)
+def render_preview(config_json, round_index):
+    config = EventConfig.from_dict(json.loads(config_json))
+    pdf, _ = build_pdf(generate_trivia_html(config, only_round=round_index))
+    return pdf_to_pngs(pdf, max_pages=1)[0]
+
+
+def read_images(files, max_px):
+    uris = []
+    for f in files:
+        try:
+            uris.append(process_image(f.getvalue(), max_px))
+        except ValueError:
+            st.warning(f"Skipped '{f.name}': it isn't an image this app can read.")
+    return tuple(uris)
+
+
+def load_setup():
+    upload = st.session_state.get("setup_upload")
+    if upload is None:
+        return
+    try:
+        config = EventConfig.from_dict(json.loads(upload.getvalue()))
+    except ValueError as exc:
+        st.session_state["setup_error"] = f"That file isn't a usable setup ({exc})."
+        return
+    st.session_state.pop("setup_error", None)
+    for key in [k for k in st.session_state if k.startswith("pics_saved_")]:
+        del st.session_state[key]
+    st.session_state.update(state_from_config(config))
+
+
+def load_questions_file():
+    upload = st.session_state.get("csv_upload")
+    if upload is not None:
+        raw = upload.getvalue()
+        try:
+            st.session_state["questions_csv"] = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            st.session_state["questions_csv"] = raw.decode("latin-1")
+
+
+def compile_documents(config, parsed):
+    docs = []
+
+    def add(label, filename, html):
+        pdf, pages = build_pdf(html)
+        try:
+            previews = pdf_to_pngs(pdf, max_pages=PREVIEW_PAGES)
+        except ImportError:
+            previews = []
+        docs.append({"label": label, "filename": filename, "pdf": pdf, "pages": pages, "previews": previews})
+
+    sheets_html = generate_trivia_html(config)
+    add("Team answer sheets", "trivia_night_pack.pdf", sheets_html)
+    add("Master scoresheet", "trivia_master_scoresheet.pdf", generate_scoresheet_html(config))
+    if parsed.has_data:
+        add("Answer key", "trivia_answer_key.pdf", generate_answer_key_html(config, parsed.by_round))
+        add("Host script", "trivia_host_script.pdf", generate_host_script_html(config, parsed.by_round))
+    return {"fingerprint": config.fingerprint(), "docs": docs, "sheets_html": sheets_html}
+
+
+st.set_page_config(page_title="Trivia Night Kit", layout="centered")
+st.title("🎯 Trivia Night Kit")
+st.write(
+    "Set up your event, then export print-ready team answer sheets, a master scoresheet, "
+    "and (if you add your questions) an answer key and host script."
+)
+
+for key, value in DEFAULTS.items():
+    st.session_state.setdefault(key, value)
+
+setup_box = st.expander("💾 Save or load a setup")
+with setup_box:
+    st.file_uploader("Load a saved setup (.json)", type=["json"], key="setup_upload", on_change=load_setup)
+    if st.session_state.get("setup_error"):
+        st.error(st.session_state["setup_error"])
+
+# 1. Event
+st.subheader("1. Event")
+col1, col2, col3 = st.columns(3)
+title = col1.text_input("Event name", key="event_title", max_chars=MAX_NAME_LEN, placeholder="Thursday Trivia Night")
+date = col2.text_input("Date", key="event_date", max_chars=MAX_NAME_LEN, placeholder="Sep 24")
+venue = col3.text_input("Venue", key="event_venue", max_chars=MAX_NAME_LEN, placeholder="The Rusty Anchor")
+
+logo = ""
+logo_file = st.file_uploader("Logo (optional, printed in each sheet's header)", type=IMAGE_TYPES, key="logo_upload")
+if logo_file:
+    processed = read_images([logo_file], LOGO_MAX_PX)
+    logo = processed[0] if processed else ""
+elif st.session_state.get("logo_saved"):
+    logo = st.session_state["logo_saved"]
+    st.caption("Using the logo from the loaded setup.")
+    if st.button("Remove that logo"):
+        st.session_state["logo_saved"] = ""
+        st.rerun()
+
+col1, col2, col3 = st.columns([1, 2, 2])
+paper = col1.selectbox("Paper", options=list(PAPERS), key="paper")
+layout = col2.selectbox("Sheets per page", options=list(LAYOUTS), format_func=lambda k: LAYOUTS[k].label, key="layout")
+ink_saver = col3.checkbox("Ink saver (outlined headers instead of solid bars)", key="ink_saver")
+max_questions = LAYOUTS[layout].max_questions
+
+# 2. Teams
+st.subheader("2. Teams")
+team_mode = st.selectbox("Sheet labels", options=list(TEAM_MODES), format_func=TEAM_MODES.get, key="team_mode")
+team_names = ()
+num_teams = st.session_state["num_teams"]
+if team_mode == "tables":
+    num_teams = st.number_input("Number of teams", min_value=1, max_value=MAX_TEAMS, key="num_teams")
+elif team_mode == "names":
+    st.text_area("Team names (one per line)", key="team_names", height=150)
+    lines = [ln.strip()[:MAX_NAME_LEN] for ln in st.session_state["team_names"].splitlines() if ln.strip()]
+    team_names = tuple(lines[:MAX_TEAMS])
+    if len(lines) > MAX_TEAMS:
+        st.warning(f"Only the first {MAX_TEAMS} teams are used.")
+    if not team_names:
+        st.caption("Add at least one team name to get labelled sheets.")
+packet_order = st.session_state["packet_order"]
+if team_mode == "blank":
+    st.caption("Blank template: one page per round, ready to photocopy.")
+else:
+    packet_order = st.selectbox("Page order", options=list(PACKET_ORDERS), format_func=PACKET_ORDERS.get, key="packet_order")
+
+# 3. Rounds
+st.subheader("3. Rounds")
+num_rounds = st.number_input("How many rounds total?", min_value=1, max_value=MAX_ROUNDS, key="num_rounds")
+
+rounds = []
 for i in range(int(num_rounds)):
-    st.markdown(f"### 📋 Round {i+1}")
-    col1, col2, col3 = st.columns([2, 1, 1])
-    
-    with col1:
-        name = st.text_input(f"Round {i+1} Name", value=f"Round {i+1}", key=f"name_{i}")
-    with col2:
-        q_count = st.number_input(f"Questions (1-10)", min_value=1, max_value=10, value=10, key=f"q_{i}")
-    with col3:
-        template_type = st.selectbox(
-            "Answer Columns", 
-            options=["Single Column", "Two Columns (Music)"], 
-            key=f"type_{i}"
-        )
-    
-    is_music = (template_type == "Two Columns (Music)")
-    rounds_data.append((name, is_music, q_count))
+    st.session_state.setdefault(f"name_{i}", f"Round {i+1}")
+    st.session_state.setdefault(f"type_{i}", "single")
+    st.session_state.setdefault(f"q_{i}", min(10, max_questions))
+    st.session_state.setdefault(f"pts_{i}", 1)
+    st.session_state.setdefault(f"extra_{i}", "none")
+    st.session_state.setdefault(f"choices_{i}", 4)
+    st.session_state[f"q_{i}"] = min(st.session_state[f"q_{i}"], max_questions)  # the layout may have shrunk
 
-# 3. Structural Core HTML Assembly Function
-def generate_trivia_html(rounds_info):
-    html_start = """<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-    *, *::before, *::after { box-sizing: border-box; }
-    @page { size: letter landscape; margin: 4mm; background-color: #ffffff; }
-    body { margin: 0; padding: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #000000; background-color: #ffffff; }
-    .master-grid { width: 100%; max-width: 100%; height: 100vh; border-collapse: collapse; page-break-after: always; table-layout: fixed; }
-    .master-grid:last-child { page-break-after: avoid; }
-    .grid-cell { width: 50%; height: 50%; vertical-align: top; background-color: #ffffff; border: 2px dashed #718096; padding: 12px 14px; overflow: hidden; position: relative; }
-    .grid-cell::before, .grid-cell::after { content: ""; position: absolute; width: 10px; height: 10px; border-color: #4a5568; }
-    .grid-cell::before { top: 2px; left: 2px; border-top: 1.5px solid #4a5568; border-left: 1.5px solid #4a5568; }
-    .grid-cell::after { bottom: 2px; right: 2px; border-bottom: 1.5px solid #4a5568; border-right: 1.5px solid #4a5568; }
-    .sheet-wrapper { width: 100%; height: 100%; }
-    .header { background-color: #2d3748; color: #ffffff; padding: 5px; border-radius: 4px; border-bottom: 2px solid #000000; text-align: center; margin-bottom: 6px; }
-    .header h1 { margin: 0; font-size: 11pt; text-transform: uppercase; letter-spacing: 1px; }
-    .team-info-box { width: 100%; font-size: 8.5pt; display: table; margin-bottom: 6px; }
-    .team-info-cell { display: table-cell; vertical-align: middle; }
-    .team-info-cell.label { font-weight: bold; color: #000000; width: 14%; }
-    .team-info-cell.line { border-bottom: 1px dashed #2d3748; width: 62%; }
-    .team-info-cell.score-label { font-weight: bold; color: #000000; text-align: right; padding-right: 5px; width: 15%; }
-    .team-info-cell.score-box { border: 2px solid #000000; border-radius: 3px; height: 18px; width: 9%; background-color: white; }
-    .answer-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .answer-table th { background-color: #1a202c; color: white; padding: 3px 5px; font-size: 8pt; text-transform: uppercase; text-align: left; }
-    .answer-table th.num-col { width: 12%; text-align: center; }
-    .answer-table th.music-col { width: 44%; }
-    .answer-row { page-break-inside: avoid; }
-    .answer-row td { padding: 3px 5px; font-size: 8.5pt; border-bottom: 1px solid #cbd5e0; line-height: 1.2; height: 24px; }
-    .answer-row td.q-num { font-weight: bold; color: #000000; text-align: center; background-color: #e2e8f0; border-right: 1px solid #cbd5e0; border-left: 1px solid #cbd5e0; }
-    .answer-row td.q-ans, .answer-row td.q-music { border-right: 1px solid #cbd5e0; background-color: #ffffff; }
-</style>
-</head>
-<body>
-"""
-    body_content = ""
-    for name, is_music, q_count in rounds_info:
-        table_head = """
-        <thead><tr><th class="num-col">#</th><th class="music-col">Song Name</th><th>Artist</th></tr></thead>
-        """ if is_music else """
-        <thead><tr><th class="num-col">#</th><th>Your Answer</th></tr></thead>
-        """
-        
-        rows = ""
-        for i in range(1, 11):
-            num_content = f"{i}" if i <= q_count else "&nbsp;"
-            if is_music:
-                rows += f'<tr class="answer-row"><td class="q-num">{num_content}</td><td class="q-music">&nbsp;</td><td class="q-ans">&nbsp;</td></tr>'
-            else:
-                rows += f'<tr class="answer-row"><td class="q-num">{num_content}</td><td class="q-ans">&nbsp;</td></tr>'
-        
-        quad_html = f"""
-        <div class="sheet-wrapper">
-            <div class="header"><h1>{name}</h1></div>
-            <div class="team-info-box">
-                <div class="team-info-cell label">Team:</div>
-                <div class="team-info-cell line"></div>
-                <div class="team-info-cell score-label">Score:</div>
-                <div class="team-info-cell score-box"></div>
-            </div>
-            <table class="answer-table">{table_head}<tbody>{rows}</tbody></table>
-        </div>
-        """
-        
-        body_content += f"""
-        <table class="master-grid">
-            <tr><td class="grid-cell">{quad_html}</td><td class="grid-cell">{quad_html}</td></tr>
-            <tr><td class="grid-cell">{quad_html}</td><td class="grid-cell">{quad_html}</td></tr>
-        </table>
-        """
-    return html_start + body_content + "</body></html>"
+    with st.container(border=True):
+        st.markdown(f"### 📋 Round {i+1}")
+        col1, col2, col3 = st.columns([2, 1, 2])
+        name = col1.text_input(f"Round {i+1} Name", key=f"name_{i}", max_chars=MAX_NAME_LEN)
+        q_count = col2.number_input(f"Questions (1-{max_questions})", min_value=1, max_value=max_questions, key=f"q_{i}")
+        kind = col3.selectbox("Answer format", options=list(FORMATS), format_func=FORMATS.get, key=f"type_{i}")
 
-# 4. Action Bars
+        col1, col2, col3 = st.columns(3)
+        points = col1.number_input("Points per question", min_value=1, max_value=99, key=f"pts_{i}")
+        extra = col2.selectbox("Extra line", options=list(EXTRAS), format_func=EXTRAS.get, key=f"extra_{i}")
+        choices = 4
+        if kind == "choice":
+            choices = col3.number_input("Choices per question", min_value=2, max_value=6, key=f"choices_{i}")
+
+        images = ()
+        if kind == "picture":
+            files = st.file_uploader(
+                "Pictures, in question order (printed in grayscale)", type=IMAGE_TYPES,
+                accept_multiple_files=True, key=f"pics_{i}",
+            )
+            if files:
+                images = read_images(files, PICTURE_MAX_PX)
+            elif st.session_state.get(f"pics_saved_{i}"):
+                images = tuple(st.session_state[f"pics_saved_{i}"])
+                st.caption(f"Using {len(images)} picture(s) from the loaded setup.")
+            if images and len(images) != q_count:
+                st.caption(
+                    f"{len(images)} picture(s) for {q_count} questions: "
+                    + ("extra pictures are ignored." if len(images) > q_count else "the remaining frames stay blank.")
+                )
+            elif not images:
+                st.caption("No pictures yet: the sheet will have empty numbered frames.")
+
+    rounds.append(Round(name.strip() or f"Round {i+1}", kind, q_count, points, extra, choices, images))
+
+# 4. Questions
+st.subheader("4. Questions and answers (optional)")
+st.caption(
+    "Add your questions to get an answer key and a host script. Columns: round, number, question, answer, notes. "
+    "A round is its name or its position (1, 2, ...). Use TB or Bonus as the number for an extra question."
+)
+st.file_uploader("Upload a CSV file", type=["csv", "tsv", "txt"], key="csv_upload", on_change=load_questions_file)
+st.text_area("...or paste rows here (a spreadsheet copies as tab-separated text, which works too)", key="questions_csv", height=170)
+st.download_button("Download a blank template for these rounds", template_csv(rounds), "questions_template.csv", "text/csv")
+
+parsed = parse_questions(st.session_state["questions_csv"], rounds)
+for message in parsed.errors:
+    st.error(message)
+for message in parsed.warnings:
+    st.warning(message)
+if parsed.has_data:
+    total = sum(len(v) for v in parsed.by_round.values())
+    st.caption(f"Read {total} question(s) across {len(parsed.by_round)} round(s).")
+
+config = EventConfig(
+    rounds=tuple(rounds), title=title.strip(), date=date.strip(), venue=venue.strip(), logo=logo,
+    paper=paper, layout=layout, ink_saver=ink_saver, team_mode=team_mode, num_teams=int(num_teams),
+    team_names=team_names, packet_order=packet_order, questions_csv=st.session_state["questions_csv"],
+)
+
+with setup_box:
+    st.download_button(
+        "Save this setup", json.dumps(config.to_dict()), "trivia_setup.json", "application/json",
+        help="Includes your rounds, questions, team names, logo and pictures.",
+    )
+
+# 5. Preview
+st.subheader("5. Preview")
+if st.session_state.get("preview_round", 0) >= len(rounds):
+    st.session_state["preview_round"] = 0
+preview_index = st.selectbox(
+    "Round to preview", options=range(len(rounds)), format_func=lambda i: rounds[i].name, key="preview_round",
+)
+try:
+    preview_config = dataclasses.replace(config, questions_csv="")
+    st.image(render_preview(json.dumps(preview_config.to_dict()), preview_index), width="stretch")
+except ImportError:
+    st.info("Install pypdfium2 (see requirements.txt) to see a live preview here.")
+
+# 6. Export
 st.markdown("---")
 if st.button("🚀 Compile Trivia Sheets", type="primary"):
-    final_html = generate_trivia_html(rounds_data)
-    
-    # Generate PDF using WeasyPrint
-    pdf_bytes = HTML(string=final_html).write_pdf()
-    
-    st.success("Compilation successful!")
-    
-    # Downloads
-    st.download_button(
-        label="📥 Download Print-Ready PDF",
-        data=pdf_bytes,
-        file_name="trivia_night_pack.pdf",
-        mime="application/pdf"
-    )
-    
-    st.download_button(
-        label="🌐 Export Raw HTML Code",
-        data=final_html,
-        file_name="trivia_night_template.html",
-        mime="text/html"
-    )
-    
-    with st.expander("👁️ Preview Raw Generated HTML"):
-        st.code(final_html, language="html")
+    with st.spinner("Building your documents…"):
+        # Kept in session state so the download buttons survive the rerun that
+        # clicking one of them triggers.
+        st.session_state["compiled"] = compile_documents(config, parsed)
+
+compiled = st.session_state.get("compiled")
+if compiled:
+    if compiled["fingerprint"] != config.fingerprint():
+        st.warning("Your setup has changed since the last compile. Compile again to update the downloads.")
+    else:
+        st.success("Compilation successful!")
+        for doc in compiled["docs"]:
+            st.download_button(
+                f"📥 {doc['label']} (PDF, {doc['pages']} page{'s' if doc['pages'] != 1 else ''})",
+                doc["pdf"], doc["filename"], "application/pdf", key=f"dl_{doc['filename']}",
+            )
+        st.download_button(
+            "🌐 Team answer sheets as HTML", compiled["sheets_html"], "trivia_night_template.html", "text/html",
+            key="dl_html",
+        )
+        spec = LAYOUTS[layout]
+        if config.teams and config.packet_order == "packets":
+            st.info(
+                f"Team packets: every {len(rounds)} pages of the team sheets form one group of {spec.per_page} "
+                f"team(s). Cut each group along the dashed lines and you get one stack per team, rounds in order."
+            )
+        with st.expander("👁️ Preview the compiled documents"):
+            tabs = st.tabs([d["label"] for d in compiled["docs"]])
+            for tab, doc in zip(tabs, compiled["docs"]):
+                with tab:
+                    for png in doc["previews"]:
+                        st.image(png, width="stretch")
+                    if doc["pages"] > len(doc["previews"]):
+                        st.caption(f"Showing the first {len(doc['previews'])} of {doc['pages']} pages.")
