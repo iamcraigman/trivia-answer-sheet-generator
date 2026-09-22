@@ -1,4 +1,21 @@
-"""Maps a saved EventConfig onto the Streamlit widget keys used by app.py."""
+"""Maps a saved EventConfig, or just a set of rounds, onto the Streamlit widget
+keys used by app.py."""
+
+
+def state_from_rounds(rounds):
+    """The session-state entries for a sequence of Round, keyed by position (the
+    per-round widget keys app.py uses: name_0, type_0, q_0, ...). Shared by a full
+    setup load and a rounds-only import, so both fill in rounds the same way."""
+    state = {}
+    for i, rnd in enumerate(rounds):
+        state[f"name_{i}"] = rnd.name
+        state[f"type_{i}"] = rnd.kind
+        state[f"q_{i}"] = rnd.questions
+        state[f"pts_{i}"] = rnd.points
+        state[f"extra_{i}"] = rnd.extra
+        state[f"choices_{i}"] = rnd.choices
+        state[f"pics_saved_{i}"] = rnd.images
+    return state
 
 
 def state_from_config(config):
@@ -18,12 +35,5 @@ def state_from_config(config):
         "questions_csv": config.questions_csv,
         "num_rounds": len(config.rounds),
     }
-    for i, rnd in enumerate(config.rounds):
-        state[f"name_{i}"] = rnd.name
-        state[f"type_{i}"] = rnd.kind
-        state[f"q_{i}"] = rnd.questions
-        state[f"pts_{i}"] = rnd.points
-        state[f"extra_{i}"] = rnd.extra
-        state[f"choices_{i}"] = rnd.choices
-        state[f"pics_saved_{i}"] = rnd.images
+    state.update(state_from_rounds(config.rounds))
     return state

@@ -22,26 +22,32 @@ A Streamlit web app that turns a trivia night setup into print-ready PDFs: team 
 **Workflow**
 - **Live preview:** see the actual rendered page for any round as you change settings.
 - **Save and load:** download your whole setup (rounds, questions, team names, logo, pictures) as a `.json` file and load it next week.
+- **Import rounds and questions from one file:** build every round — name, format, points, and questions and answers — from a single spreadsheet, instead of configuring each round by hand.
 
-## 📥 Adding your questions (optional)
+## 📥 Importing rounds and questions from a file
 
-Upload a CSV, or paste rows from a spreadsheet (pasted spreadsheet cells are tab-separated, which works). The first row names the columns:
+Both importers read the same file shape: one row per question, from an uploaded CSV/TSV or pasted spreadsheet cells (which copy as tab-separated text). The first row names the columns:
 
 | column | required | notes |
 | --- | --- | --- |
-| `round` | yes | The round's name or its position (`1`, `2`, ...) |
-| `question` and/or `answer` | at least one | |
+| `round` | yes | The round's name, or (section 4 only) its position (`1`, `2`, ...) |
+| `question` and/or `answer` | at least one, section 4 only | |
 | `number` | no | Filled in automatically. Use `TB` or `Bonus` to mark a round's tiebreaker or bonus question |
 | `notes` | no | Host-only notes, shown in the host script |
+| `format` | no, section 3 only | Single Column, Two Columns (Music), True/False, Multiple Choice, or Picture Round |
+| `points` | no, section 3 only | Points per question for that round |
+| `choices` | no, section 3 only | Number of options for a Multiple Choice round (2-6) |
+
+**Section 3 — build rounds from scratch.** Upload a file with a `format` column (and optionally `points`/`choices`) and it replaces your current rounds entirely: one round per distinct name, in the order it first appears, with however many rows it has as its question count. It also fills in section 4 below with the same file, so nothing needs uploading twice — a picture round's images still need adding by hand, since a spreadsheet can't carry them. Download an example file from the app to see the shape.
 
 ```csv
-round,number,question,answer,notes
-Geography,1,What is the capital of France?,Paris,
-Geography,TB,How many countries are in Africa?,54,Closest guess wins
-Name That Tune,1,Play clip 1,Bohemian Rhapsody - Queen,
+round,format,points,number,question,answer,notes
+Geography,Single Column,1,1,What is the capital of France?,Paris,
+Geography,Single Column,1,TB,How many countries are in Africa?,54,Closest guess wins
+Name That Tune,Two Columns (Music),2,1,Play clip 1,Bohemian Rhapsody - Queen,
 ```
 
-The app warns about rows that match no round and about rounds whose question count doesn't match. **Download a blank template** in the app to get one row per configured question.
+**Section 4 — add answers to rounds already configured.** Same shape, without the round-defining columns, matched against the rounds already set up (by name or position) rather than replacing them. The app warns about rows that match no round and about rounds whose question count doesn't match. **Download a blank template** in the app to get one row per configured question.
 
 ## 🖨️ Printing tips
 - With **team packets** ordering, every *rounds*-many pages of the PDF form one group of teams (4 teams for the 4-per-page layout). Cut each group along the dashed lines through the whole stack and you get one stack per team.
@@ -75,7 +81,7 @@ The PDF and app tests are skipped automatically if WeasyPrint's system libraries
   - `models.py`: the event and round data model, with JSON save/load and validation.
   - `sheets.py`: builds the team-sheet HTML (no Streamlit or WeasyPrint dependency).
   - `host.py`: builds the scoresheet, answer key and host script HTML.
-  - `questions.py`: parses the questions CSV and writes the template.
+  - `questions.py`: parses the questions CSV, infers whole rounds from a file, and writes the templates.
   - `images.py`: shrinks and grayscales uploaded pictures for printing.
   - `pdf.py`: renders HTML to PDF and pages to preview images, and sets up the Windows DLL lookup. It is the only module that needs WeasyPrint.
   - `state.py`: maps a saved setup onto the app's widget keys.

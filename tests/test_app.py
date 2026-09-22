@@ -168,3 +168,75 @@ def test_a_setup_file_cannot_smuggle_in_a_remote_image():
     at.file_uploader(key="setup_upload").upload("x.json", json.dumps(hostile).encode()).run()
     html = compiled(click(at, "Compile"))["sheets_html"]
     assert "example.invalid" not in html and "win.ini" not in html
+
+
+ROUNDS_CSV = (
+    "round,format,points,number,question,answer,notes\n"
+    "Movies,Multiple Choice,2,1,Which film won Best Picture in 2020?,Parasite,\n"
+    "Movies,Multiple Choice,2,2,Which film won in 2019?,Green Book,\n"
+    "Sound,Two Columns (Music),1,1,Clip 1,Bohemian Rhapsody - Queen,\n"
+    "Sound,Two Columns (Music),1,TB,Closest guess,54,\n"
+)
+
+
+def test_importing_a_rounds_file_replaces_the_rounds_and_fills_in_questions():
+    at = new_app()
+    at.file_uploader(key="rounds_upload").upload("rounds.csv", ROUNDS_CSV.encode()).run()
+    assert not at.exception and not at.error and not at.warning
+    assert at.number_input(key="num_rounds").value == 2
+    assert at.text_input(key="name_0").value == "Movies"
+    assert at.selectbox(key="type_0").value == "choice"
+    assert at.number_input(key="q_0").value == 2
+    assert at.number_input(key="pts_0").value == 2
+    assert at.selectbox(key="extra_1").value == "tiebreaker"
+    assert at.text_area(key="questions_csv").value == ROUNDS_CSV
+    docs = compiled(click(at, "Compile"))["docs"]
+    assert [d["label"] for d in docs] == ["Team answer sheets", "Master scoresheet", "Answer key", "Host script"]
+
+
+def test_importing_rounds_does_not_touch_event_or_team_settings():
+    at = new_app()
+    at.text_input(key="event_title").set_value("Thursday Night").run()
+    at.selectbox(key="team_mode").set_value("names").run()
+    at.text_area(key="team_names").set_value("Ants\nBees").run()
+    at.file_uploader(key="rounds_upload").upload("rounds.csv", ROUNDS_CSV.encode()).run()
+    assert not at.exception
+    assert at.text_input(key="event_title").value == "Thursday Night"
+    assert at.selectbox(key="team_mode").value == "names"
+    assert at.text_area(key="team_names").value == "Ants\nBees"
+
+
+@pytest.mark.parametrize("content", [b"", b"format,answer\nSingle,x\n", b"round,answer\n"])
+def test_a_broken_rounds_file_shows_an_error_and_changes_nothing(content):
+    at = new_app()
+    at.file_uploader(key="rounds_upload").upload("bad.csv", content).run()
+    assert not at.exception
+    assert at.error
+    assert at.text_input(key="name_0").value == "Round 1"
+
+
+def test_importing_rounds_warns_about_conflicting_fields_but_still_imports():
+    at = new_app()
+    conflicting = "round,points,answer\nR,2,x\nR,5,y\n"
+    at.file_uploader(key="rounds_upload").upload("rounds.csv", conflicting.encode()).run()
+    assert not at.exception and not at.error
+    assert any("more than one points" in w.value for w in at.warning)
+    assert at.number_input(key="pts_0").value == 2
+
+
+def test_importing_rounds_clamps_question_count_to_the_current_layout():
+    at = new_app()
+    many_rows = "round,answer\n" + "\n".join(f"R,{i}" for i in range(15))
+    at.file_uploader(key="rounds_upload").upload("rounds.csv", many_rows.encode()).run()
+    assert not at.exception
+    assert at.number_input(key="q_0").value == 10   # the default 4-per-page layout's maximum
+
+
+def test_reimporting_rounds_clears_pictures_from_a_previously_loaded_setup():
+    setup = EventConfig(rounds=(Round("Pics", "picture", 5, images=(DATA_URI, DATA_URI)),))
+    at = new_app()
+    at.file_uploader(key="setup_upload").upload("setup.json", json.dumps(setup.to_dict()).encode()).run()
+    assert at.session_state["pics_saved_0"] == (DATA_URI, DATA_URI)
+    at.file_uploader(key="rounds_upload").upload("rounds.csv", b"round,answer\nNew Round,x\n").run()
+    assert not at.exception
+    assert at.session_state["pics_saved_0"] == ()
