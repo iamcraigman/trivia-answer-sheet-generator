@@ -30,6 +30,8 @@ HOST_CSS = """
     .q { break-inside: avoid; margin: 0 0 9px; padding-bottom: 7px; border-bottom: 1px solid #cccccc; }
     .q .text { font-size: 12pt; white-space: pre-line; }
     .q .num { display: inline-block; min-width: 24px; padding-right: 6px; font-weight: bold; }
+    .q .options { margin-top: 3px; padding-left: 30px; font-size: 10pt; color: #333333; }
+    .q .options b { margin-right: 2px; }
     .q .ans { margin-top: 3px; padding-left: 30px; font-size: 11pt; font-weight: bold; }
     .q .notes { margin-top: 2px; padding-left: 30px; font-size: 9pt; font-style: italic; color: #555555; white-space: pre-line; }
     .missing { color: #777777; font-style: italic; }
@@ -114,10 +116,16 @@ def generate_host_script_html(config, by_round):
                 text = escape(q.text) if q.text else '<span class="missing">(no question text)</span>'
                 answer = escape(q.answer) if q.answer else '<span class="missing">(no answer)</span>'
                 notes = f'<div class="notes">{escape(q.notes)}</div>' if q.notes else ""
+                options = ""
+                if rnd.kind == "choice" and q.options:
+                    letters = "ABCDEF"[: rnd.choices]
+                    options = '<div class="options">' + "&nbsp;&nbsp;".join(
+                        f'<b>{letters[j]}</b> {escape(opt)}' for j, opt in enumerate(q.options[: rnd.choices])
+                    ) + "</div>"
                 items += (
                     '<div class="q">'
                     f'<div class="text"><span class="num">{escape(q.number)}.</span>{text}</div>'
-                    f'<div class="ans">Answer: {answer}</div>{notes}</div>'
+                    f'{options}<div class="ans">Answer: {answer}</div>{notes}</div>'
                 )
         else:
             items = '<p class="missing">No questions provided for this round.</p>'

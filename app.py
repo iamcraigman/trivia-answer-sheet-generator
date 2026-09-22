@@ -12,7 +12,7 @@ from trivia_kit.models import (
 from trivia_kit.pdf import build_pdf, pdf_to_pngs
 from trivia_kit.questions import EXAMPLE_ROUNDS_CSV, import_rounds, parse_questions, template_csv
 from trivia_kit.sheets import generate_trivia_html
-from trivia_kit.state import state_from_config, state_from_rounds
+from trivia_kit.state import mc_options_from_text, state_from_config, state_from_rounds
 
 IMAGE_TYPES = ["png", "jpg", "jpeg", "gif", "webp"]
 PREVIEW_PAGES = 3
@@ -102,6 +102,30 @@ def import_rounds_file():
     # The same file also has the questions and answers section 4 needs; a picture
     # round's images still need adding by hand below, the same as a manually added one.
     st.session_state["questions_csv"] = text
+
+
+def _resolve_mc_options(rnd, index, parsed):
+    """A Choice round's real answer options, one tuple per question: the
+    questions file (section 4) takes precedence per question, falling back to
+    the round's own compact box for any question the file doesn't cover."""
+    if rnd.kind != "choice":
+        return rnd
+    fallback = mc_options_from_text(st.session_state.get(f"mc_opts_{index}", ""))
+    from_file = {}
+    for q in parsed.by_round.get(index, []):
+        if q.extra or not q.options:
+            continue
+        try:
+            from_file[int(q.number)] = q.options
+        except ValueError:
+            pass
+    if not from_file and not any(fallback):
+        return rnd  # no options anywhere; leave mc_options at its current (canonical empty) value
+    merged = tuple(
+        (from_file.get(n) or (fallback[n - 1] if n - 1 < len(fallback) else ()))[: rnd.choices]
+        for n in range(1, rnd.questions + 1)
+    )
+    return dataclasses.replace(rnd, mc_options=merged)
 
 
 def compile_documents(config, parsed):
@@ -194,7 +218,8 @@ with st.expander("📥 Import rounds from a file (optional)"):
         "themselves instead of just answering already-configured ones: **format** (Single Column, "
         "Two Columns (Music), True/False, Multiple Choice, or Picture Round), **points** and **choices**. "
         "A round's question count is however many rows it has. Importing replaces your current rounds "
-        "and fills in section 4 with this same file — a picture round's images still need adding below."
+        "and fills in section 4 with this same file — a picture round's images still need adding below. "
+        "For a Multiple Choice round, an **options** column (see section 4) prints the real answer choices."
     )
     st.file_uploader("Upload a CSV, TSV, or spreadsheet export", type=["csv", "tsv", "txt"], key="rounds_upload", on_change=import_rounds_file)
     if st.session_state.get("rounds_import_error"):
@@ -213,6 +238,7 @@ for i in range(int(num_rounds)):
     st.session_state.setdefault(f"pts_{i}", 1)
     st.session_state.setdefault(f"extra_{i}", "none")
     st.session_state.setdefault(f"choices_{i}", 4)
+    st.session_state.setdefault(f"mc_opts_{i}", "")
     st.session_state[f"q_{i}"] = min(st.session_state[f"q_{i}"], max_questions)  # the layout may have shrunk
 
     with st.container(border=True):
@@ -228,6 +254,11 @@ for i in range(int(num_rounds)):
         choices = 4
         if kind == "choice":
             choices = col3.number_input("Choices per question", min_value=2, max_value=6, key=f"choices_{i}")
+            st.text_area(
+                "Answer options, one line per question (used for any question section 4's file doesn't cover)",
+                key=f"mc_opts_{i}", height=100,
+                placeholder="Lions, Tigers, Bears, Oh My\nParis, London, Berlin, Madrid",
+            )
 
         images = ()
         if kind == "picture":
@@ -253,8 +284,10 @@ for i in range(int(num_rounds)):
 # 4. Questions
 st.subheader("4. Questions and answers (optional)")
 st.caption(
-    "Add your questions to get an answer key and a host script. Columns: round, number, question, answer, notes. "
-    "A round is its name or its position (1, 2, ...). Use TB or Bonus as the number for an extra question. "
+    "Add your questions to get an answer key and a host script. Columns: round, number, question, answer, notes, "
+    "options. A round is its name or its position (1, 2, ...). Use TB or Bonus as the number for an extra question. "
+    "For a Multiple Choice round, **options** prints the real answer choices instead of bare letters — the "
+    "choices for that question, comma-separated (e.g. \"Lions, Tigers, Bears, Oh My\"). "
     "(The same file can also build your rounds from scratch — see the importer in section 3 above.)"
 )
 st.file_uploader("Upload a CSV file", type=["csv", "tsv", "txt"], key="csv_upload", on_change=load_questions_file)
@@ -269,6 +302,8 @@ for message in parsed.warnings:
 if parsed.has_data:
     total = sum(len(v) for v in parsed.by_round.values())
     st.caption(f"Read {total} question(s) across {len(parsed.by_round)} round(s).")
+
+rounds = [_resolve_mc_options(r, i, parsed) for i, r in enumerate(rounds)]
 
 config = EventConfig(
     rounds=tuple(rounds), title=title.strip(), date=date.strip(), venue=venue.strip(), logo=logo,

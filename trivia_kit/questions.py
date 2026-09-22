@@ -23,7 +23,8 @@ COLUMN_ALIASES = {
     "notes": {"notes", "note", "comment", "comments"},
     "format": {"format", "type", "kind", "answer format", "answer type"},
     "points": {"points", "pts", "point", "points each", "pts each"},
-    "choices": {"choices", "option", "options", "num choices"},
+    "choices": {"choices", "num choices", "# choices"},
+    "options": {"option", "options", "answer options", "choice options", "option list", "mc options"},
 }
 
 # Recognized beyond FORMATS' own keys ("single", "music", ...) and display
@@ -62,6 +63,7 @@ class Question:
     answer: str
     notes: str = ""
     extra: bool = False
+    options: tuple = ()   # multiple-choice rounds only: the answer choices, comma-separated in the file
 
 
 @dataclass
@@ -125,6 +127,7 @@ def parse_questions(text, rounds):
         if not extra_label:
             counters[index] = counters.get(index, 0) + 1
             number = number or str(counters[index])
+        options = tuple(o.strip() for o in cell(row, "options").split(",") if o.strip())
         result.by_round.setdefault(index, []).append(
             Question(
                 number=extra_label or number,
@@ -132,6 +135,7 @@ def parse_questions(text, rounds):
                 answer=cell(row, "answer"),
                 notes=cell(row, "notes"),
                 extra=bool(extra_label),
+                options=options,
             )
         )
 
@@ -242,24 +246,26 @@ def import_rounds(text):
 
 
 EXAMPLE_ROUNDS_CSV = """\
-round,format,points,number,question,answer,notes
-General Knowledge,Single Column,1,1,What is the capital of France?,Paris,
-General Knowledge,Single Column,1,2,Who wrote Hamlet?,William Shakespeare,
-General Knowledge,Single Column,1,TB,How many countries are in Africa?,54,Closest guess wins
-Name That Tune,Two Columns (Music),2,1,Play clip 1,Bohemian Rhapsody - Queen,
-Name That Tune,Two Columns (Music),2,2,Play clip 2,Thriller - Michael Jackson,
-Movie Trivia,Multiple Choice,1,1,Which film won Best Picture in 2020?,Parasite,
+round,format,points,number,question,answer,notes,options
+General Knowledge,Single Column,1,1,What is the capital of France?,Paris,,
+General Knowledge,Single Column,1,2,Who wrote Hamlet?,William Shakespeare,,
+General Knowledge,Single Column,1,TB,How many countries are in Africa?,54,Closest guess wins,
+Name That Tune,Two Columns (Music),2,1,Play clip 1,Bohemian Rhapsody - Queen,,
+Name That Tune,Two Columns (Music),2,2,Play clip 2,Thriller - Michael Jackson,,
+Movie Trivia,Multiple Choice,1,1,Which film won Best Picture in 2020?,Parasite,,"Parasite, 1917, Joker, Jojo Rabbit"
 """
 
 
 def template_csv(rounds):
-    """A ready-to-fill CSV with one blank row per configured question."""
+    """A ready-to-fill CSV with one blank row per configured question. The
+    `options` column only matters for Multiple Choice rounds: the answer
+    choices for that question, comma-separated (e.g. "Lions, Tigers, Bears")."""
     out = io.StringIO()
     writer = csv.writer(out, lineterminator="\n")
-    writer.writerow(["round", "number", "question", "answer", "notes"])
+    writer.writerow(["round", "number", "question", "answer", "notes", "options"])
     for rnd in rounds:
         for n in range(1, rnd.questions + 1):
-            writer.writerow([rnd.name, n, "", "", ""])
+            writer.writerow([rnd.name, n, "", "", "", ""])
         if rnd.extra != "none":
-            writer.writerow([rnd.name, "TB" if rnd.extra == "tiebreaker" else "Bonus", "", "", ""])
+            writer.writerow([rnd.name, "TB" if rnd.extra == "tiebreaker" else "Bonus", "", "", "", ""])
     return out.getvalue()

@@ -28,6 +28,22 @@ def test_spreadsheet_paste_is_tab_separated():
     assert (q.text, q.answer, q.notes) == ("Capital of France, right?", "Paris", "Easy")
 
 
+def test_options_column_is_comma_split_and_trimmed():
+    result = parse('round,answer,options\nGeography,Paris,"Paris, London,  Berlin ,,Madrid"\n')
+    assert result.by_round[0][0].options == ("Paris", "London", "Berlin", "Madrid")
+
+
+def test_options_column_is_optional_and_defaults_to_empty():
+    result = parse("round,answer\nGeography,Paris\n")
+    assert result.by_round[0][0].options == ()
+
+
+def test_options_header_aliases():
+    for header in ("option", "options", "answer options", "choice options", "option list", "mc options"):
+        result = parse_questions(f'round,answer,{header}\nGeography,x,"A,B"\n', ROUNDS)
+        assert result.by_round[0][0].options == ("A", "B"), header
+
+
 def test_quoted_commas_and_column_aliases():
     result = parse('RD,Q,A\n1,"Who, what, where?",Nobody\n')
     assert result.by_round[0][0].text == "Who, what, where?"
@@ -60,7 +76,7 @@ def test_byte_order_mark_is_ignored():
 
 def test_template_matches_the_rounds_and_parses_back():
     text = template_csv(ROUNDS)
-    assert text.splitlines()[0] == "round,number,question,answer,notes"
+    assert text.splitlines()[0] == "round,number,question,answer,notes,options"
     assert text.count("Geography") == 3 and "Geography,TB" in text
     result = parse(text)
     assert not result.errors and len(result.by_round[0]) == 3
@@ -180,3 +196,4 @@ class TestImportRounds:
         assert config.rounds[0].extra == "tiebreaker"
         parsed = parse_questions(EXAMPLE_ROUNDS_CSV, config.rounds)
         assert not parsed.warnings and not parsed.errors and parsed.has_data
+        assert parsed.by_round[2][0].options == ("Parasite", "1917", "Joker", "Jojo Rabbit")

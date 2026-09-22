@@ -240,3 +240,55 @@ def test_reimporting_rounds_clears_pictures_from_a_previously_loaded_setup():
     at.file_uploader(key="rounds_upload").upload("rounds.csv", b"round,answer\nNew Round,x\n").run()
     assert not at.exception
     assert at.session_state["pics_saved_0"] == ()
+
+
+def _make_choice_round(at):
+    at.selectbox(key="type_0").set_value("choice").run()
+    return at
+
+
+def test_mc_options_box_only_shows_for_choice_format_rounds():
+    at = new_app()
+    assert "mc_opts_0" not in [t.key for t in at.text_area]
+    _make_choice_round(at)
+    assert "mc_opts_0" in [t.key for t in at.text_area]
+
+
+def test_the_in_app_fallback_box_reaches_the_sheets_when_theres_no_file():
+    at = _make_choice_round(new_app())
+    at.text_area(key="mc_opts_0").set_value("Lions, Tigers, Bears, Oh My").run()
+    html = compiled(click(at, "Compile"))["sheets_html"]
+    assert "<b>A</b> Lions" in html and "<b>D</b> Oh My" in html
+
+
+def test_a_questions_file_takes_precedence_over_the_fallback_box_per_question():
+    at = _make_choice_round(new_app())
+    at.text_area(key="mc_opts_0").set_value("Fallback A, Fallback B").run()  # would cover question 1
+    at.text_area(key="questions_csv").set_value(
+        'round,number,answer,options\n1,1,Paris,"Paris, London, Berlin"\n'
+    ).run()
+    html = compiled(click(at, "Compile"))["sheets_html"]
+    assert "<b>A</b> Paris" in html and "<b>B</b> London" in html
+    assert "Fallback A" not in html
+
+
+def test_the_fallback_box_fills_in_questions_the_file_does_not_cover():
+    at = _make_choice_round(new_app())
+    at.text_area(key="mc_opts_0").set_value("Lions, Tigers, Bears, Oh My\nParis, London, Berlin").run()
+    at.text_area(key="questions_csv").set_value('round,number,answer,options\n1,1,Lions,\n').run()  # only Q1, no options
+    html = compiled(click(at, "Compile"))["sheets_html"]
+    assert "<b>A</b> Lions" in html            # question 1: bare circles (file matched it but gave no options)
+    assert "<b>A</b> Paris" in html            # question 2: nothing from the file, so the fallback box is used
+
+
+def test_mc_options_round_trip_through_a_saved_setup():
+    config = EventConfig(rounds=(
+        Round("MC", "choice", 3, choices=4, mc_options=(("Lions", "Tigers", "Bears", "Oh My"), (), ("Paris",))),
+    ))
+    at = AppTest.from_file(APP, default_timeout=120)
+    for key, value in state_from_config(config).items():
+        at.session_state[key] = value
+    at.run()
+    assert not at.exception
+    assert at.text_area(key="mc_opts_0").value == "Lions, Tigers, Bears, Oh My\n\nParis"
+    assert compiled(click(at, "Compile"))["fingerprint"] == config.fingerprint()

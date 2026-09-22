@@ -1,5 +1,5 @@
 from trivia_kit.models import EventConfig, Round
-from trivia_kit.state import state_from_config, state_from_rounds
+from trivia_kit.state import mc_options_from_text, mc_options_to_text, state_from_config, state_from_rounds
 
 
 def test_state_from_rounds_maps_every_per_round_widget_key():
@@ -13,10 +13,28 @@ def test_state_from_rounds_maps_every_per_round_widget_key():
     assert state["choices_1"] == 5
     assert state["pics_saved_1"] == ("data:image/jpeg;base64,AAAA",)
     assert state["pics_saved_0"] == ()
+    assert state["mc_opts_0"] == state["mc_opts_1"] == ""
     assert set(state) == {
-        "name_0", "type_0", "q_0", "pts_0", "extra_0", "choices_0", "pics_saved_0",
-        "name_1", "type_1", "q_1", "pts_1", "extra_1", "choices_1", "pics_saved_1",
+        "name_0", "type_0", "q_0", "pts_0", "extra_0", "choices_0", "pics_saved_0", "mc_opts_0",
+        "name_1", "type_1", "q_1", "pts_1", "extra_1", "choices_1", "pics_saved_1", "mc_opts_1",
     }
+
+
+def test_state_from_rounds_fills_in_the_mc_options_fallback_textarea():
+    rnd = Round("Q", "choice", 3, choices=4, mc_options=(("Lions", "Tigers"), (), ("Paris", "London", "Berlin")))
+    state = state_from_rounds((rnd,))
+    assert state["mc_opts_0"] == "Lions, Tigers\n\nParis, London, Berlin"
+
+
+def test_mc_options_text_conversion_round_trips():
+    options = (("Lions", "Tigers", "Bears", "Oh My"), (), ("Paris",))
+    text = mc_options_to_text(options)
+    assert text == "Lions, Tigers, Bears, Oh My\n\nParis"
+    assert mc_options_from_text(text) == options
+
+
+def test_mc_options_from_text_ignores_stray_commas_and_whitespace():
+    assert mc_options_from_text(" Lions ,, Tigers \n\n") == (("Lions", "Tigers"), ())
 
 
 def test_state_from_rounds_handles_no_rounds():

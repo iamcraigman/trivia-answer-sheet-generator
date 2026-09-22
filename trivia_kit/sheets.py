@@ -49,6 +49,10 @@ BASE_CSS = """
     .answer-row td.q-ans, .answer-row td.q-music { border-right: 1px solid #cccccc; background-color: #ffffff; }
     .answer-row td.q-marks { text-align: center; }
     .mark { display: inline-block; border: 1px solid #333333; border-radius: 50%; text-align: center; font-size: 7.5pt; font-weight: bold; margin: 0 9px; }
+    .answer-row td.q-choices { font-size: 7.5pt; white-space: nowrap; overflow: hidden; }
+    .answer-row td.q-marks.q-left { text-align: left; padding-left: 10px; }
+    .q-choices .choice { display: inline-block; margin-right: 8px; }
+    .q-choices .choice b { margin-right: 2px; }
     .answer-row td.q-extra { text-align: right; color: #555555; font-size: 7pt; }
     .wager-box { display: inline-block; width: 34px; height: 13px; border: 1.5px solid #000000; border-radius: 2px; vertical-align: middle; margin-left: 4px; }
     .pic-grid { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 4px; margin: -4px; }
@@ -112,23 +116,61 @@ def _marks(letters, size):
     return "".join(f'<span class="mark" style="{style}">{letter}</span>' for letter in letters)
 
 
-def _table_parts(rnd, mark_size):
-    """(head cells, cells of a used row, cells of an unused row, column count)."""
+def _mc_option_budget(config, rnd):
+    """Rough max characters per option, so a Circle One row's real choice text
+    always fits on its single-line row — options are truncated to this length
+    rather than risking them running off the page."""
+    layout = config.layout_spec
+    width_mm, height_mm = PAPERS[config.paper]
+    page_w_mm = height_mm if layout.landscape else width_mm
+    cell_w_px = (page_w_mm - 2 * MARGIN_MM) * MM_TO_PX / layout.cols - SHEET_PADDING_PX
+    choices_col_px = cell_w_px * 0.88   # ~100% minus the #-column's 12%
+    px_per_char = 4.6                   # rough average glyph width at the options' font size
+    per_option_px = choices_col_px / max(1, rnd.choices)
+    return max(4, int(per_option_px / px_per_char) - 3)   # -3 reserves room for "X " prefix
+
+
+def _choice_used_cell(rnd, mark_size, mc_budget):
+    """A Circle One row's used-cell for question `i` (1-based): the real
+    options when the round has them, truncated to fit one line; bare lettered
+    circles otherwise (no options for that question). When the round has real
+    options for at least one *other* question, a gap row's circles are left-
+    aligned to line up with those option-text rows instead of sitting centered
+    on their own — otherwise they stay centered, matching a round with no
+    options at all (unchanged from before this feature)."""
+    letters = "ABCDEF"[: rnd.choices]
+    bare_class = "q-ans q-marks q-left" if any(rnd.mc_options) else "q-ans q-marks"
+    bare = f'<td class="{bare_class}">{_marks(letters, mark_size)}</td>'
+
+    def cell(i):
+        options = rnd.mc_options[i - 1] if i - 1 < len(rnd.mc_options) else ()
+        if not options:
+            return bare
+        spans = "".join(
+            f'<span class="choice"><b>{letters[j]}</b> {escape(truncate(opt, mc_budget))}</span>'
+            for j, opt in enumerate(options[: rnd.choices])
+        )
+        return f'<td class="q-ans q-choices">{spans}</td>'
+
+    return cell
+
+
+def _table_parts(rnd, mark_size, mc_budget):
+    """(head cells, a used-cell-for-question(i) callable, cells of an unused row, column count)."""
     if rnd.kind == "music":
         head = '<th class="num-col">#</th><th class="music-col">Song Name</th><th>Artist</th>'
         blank = '<td class="q-music">&nbsp;</td><td class="q-ans">&nbsp;</td>'
-        return head, blank, blank, 3
+        return head, lambda i: blank, blank, 3
     blank = '<td class="q-ans">&nbsp;</td>'
     if rnd.kind == "truefalse":
         head = '<th class="num-col">#</th><th>True / False</th>'
         used = f'<td class="q-ans q-marks">{_marks("TF", mark_size)}</td>'
-    elif rnd.kind == "choice":
+        return head, lambda i: used, blank, 2
+    if rnd.kind == "choice":
         head = '<th class="num-col">#</th><th>Circle One</th>'
-        used = f'<td class="q-ans q-marks">{_marks("ABCDEF"[:rnd.choices], mark_size)}</td>'
-    else:
-        head = '<th class="num-col">#</th><th>Your Answer</th>'
-        used = blank
-    return head, used, blank, 2
+        return head, _choice_used_cell(rnd, mark_size, mc_budget), blank, 2
+    head = '<th class="num-col">#</th><th>Your Answer</th>'
+    return head, lambda i: blank, blank, 2
 
 
 def _extra_row(rnd, columns):
@@ -199,7 +241,8 @@ def _sheet_html(config, rnd, team, shown):
     extra_rows = 1 if rnd.extra != "none" else 0
     height = row_height(config, shown + extra_rows)
     mark_size = min(16, height - 8)
-    head, used, unused, columns = _table_parts(rnd, mark_size)
+    mc_budget = _mc_option_budget(config, rnd) if rnd.kind == "choice" else 0
+    head, used, unused, columns = _table_parts(rnd, mark_size, mc_budget)
 
     if rnd.kind == "picture":
         per_row = 5 if config.layout == "4up" else 4
@@ -210,7 +253,7 @@ def _sheet_html(config, rnd, team, shown):
         rows = ""
         for i in range(1, shown + 1):
             if i <= rnd.questions:
-                rows += f'<tr class="answer-row"><td class="q-num">{i}</td>{used}</tr>'
+                rows += f'<tr class="answer-row"><td class="q-num">{i}</td>{used(i)}</tr>'
             else:
                 rows += f'<tr class="answer-row"><td class="q-num">&nbsp;</td>{unused}</tr>'
         rows += _extra_row(rnd, columns)

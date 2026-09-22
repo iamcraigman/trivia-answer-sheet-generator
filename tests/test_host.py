@@ -47,3 +47,24 @@ def test_host_script_starts_each_round_on_its_own_page_with_notes():
     html = generate_host_script_html(config(), parse_questions(CSV, ROUNDS).by_round)
     assert html.count('class="script-round"') == 2
     assert "Answer: A &amp; B" in html and "note &lt;x&gt;" in html
+
+
+def test_host_script_lists_options_for_a_choice_round():
+    rounds = (Round("MC", "choice", 1, choices=3),)
+    csv = 'round,number,question,answer,options\n1,1,Q,B,"A <opt>,B,C"\n'
+    html = generate_host_script_html(EventConfig(rounds=rounds), parse_questions(csv, rounds).by_round)
+    assert '<b>A</b> A &lt;opt&gt;' in html and '<b>B</b> B' in html and '<b>C</b> C' in html
+
+
+def test_host_script_options_are_limited_to_the_rounds_choice_count():
+    rounds = (Round("MC", "choice", 1, choices=2),)
+    csv = 'round,number,question,answer,options\n1,1,Q,A,"A,B,C,D"\n'
+    html = generate_host_script_html(EventConfig(rounds=rounds), parse_questions(csv, rounds).by_round)
+    options_block = html.split('<div class="options">')[1].split("</div>")[0]
+    assert "<b>A</b> A" in options_block and "<b>B</b> B" in options_block
+    assert "C" not in options_block and "D" not in options_block
+
+
+def test_host_script_has_no_options_block_when_the_round_has_none():
+    html = generate_host_script_html(config(), parse_questions(CSV, ROUNDS).by_round)
+    assert 'class="options"' not in html

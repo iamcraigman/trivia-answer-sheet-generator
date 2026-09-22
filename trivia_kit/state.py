@@ -2,6 +2,18 @@
 keys used by app.py."""
 
 
+def mc_options_to_text(mc_options):
+    """A Multiple Choice round's resolved options as the fallback textarea shows
+    them: one line per question, its choices comma-separated."""
+    return "\n".join(", ".join(opts) for opts in mc_options)
+
+
+def mc_options_from_text(text):
+    """The reverse of `mc_options_to_text`: one tuple of choices per line, in
+    question order. A blank line means that question has no options yet."""
+    return tuple(tuple(o.strip() for o in line.split(",") if o.strip()) for line in text.splitlines())
+
+
 def state_from_rounds(rounds):
     """The session-state entries for a sequence of Round, keyed by position (the
     per-round widget keys app.py uses: name_0, type_0, q_0, ...). Shared by a full
@@ -15,6 +27,7 @@ def state_from_rounds(rounds):
         state[f"extra_{i}"] = rnd.extra
         state[f"choices_{i}"] = rnd.choices
         state[f"pics_saved_{i}"] = rnd.images
+        state[f"mc_opts_{i}"] = mc_options_to_text(rnd.mc_options)
     return state
 
 
