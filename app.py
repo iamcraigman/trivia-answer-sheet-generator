@@ -10,9 +10,9 @@ from trivia_kit.models import (
     TEAM_MODES, EventConfig, Round,
 )
 from trivia_kit.pdf import build_pdf, pdf_to_pngs
-from trivia_kit.questions import parse_questions, template_csv
+from trivia_kit.questions import EXAMPLE_ROUNDS_CSV, import_rounds, parse_questions, template_csv
 from trivia_kit.sheets import generate_trivia_html
-from trivia_kit.state import state_from_config
+from trivia_kit.state import state_from_config, state_from_rounds
 
 IMAGE_TYPES = ["png", "jpg", "jpeg", "gif", "webp"]
 PREVIEW_PAGES = 3
@@ -47,6 +47,19 @@ def read_images(files, max_px):
     return tuple(uris)
 
 
+def _clear_saved_pictures():
+    for key in [k for k in st.session_state if k.startswith("pics_saved_")]:
+        del st.session_state[key]
+
+
+def _decode_upload(upload):
+    raw = upload.getvalue()
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
 def load_setup():
     upload = st.session_state.get("setup_upload")
     if upload is None:
@@ -57,19 +70,38 @@ def load_setup():
         st.session_state["setup_error"] = f"That file isn't a usable setup ({exc})."
         return
     st.session_state.pop("setup_error", None)
-    for key in [k for k in st.session_state if k.startswith("pics_saved_")]:
-        del st.session_state[key]
+    _clear_saved_pictures()
     st.session_state.update(state_from_config(config))
 
 
 def load_questions_file():
     upload = st.session_state.get("csv_upload")
     if upload is not None:
-        raw = upload.getvalue()
-        try:
-            st.session_state["questions_csv"] = raw.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            st.session_state["questions_csv"] = raw.decode("latin-1")
+        st.session_state["questions_csv"] = _decode_upload(upload)
+
+
+def import_rounds_file():
+    upload = st.session_state.get("rounds_upload")
+    if upload is None:
+        return
+    text = _decode_upload(upload)
+    result = import_rounds(text)
+    if result.errors:
+        st.session_state["rounds_import_error"] = result.errors[0]
+        st.session_state["rounds_import_warnings"] = []
+        return
+    # Clamp against the layout already chosen in section 1, same as every other
+    # source of round data (manual entry, a loaded setup file).
+    layout = st.session_state.get("layout", "4up")
+    config = EventConfig.from_dict({"layout": layout, "rounds": result.rounds})
+    st.session_state.pop("rounds_import_error", None)
+    st.session_state["rounds_import_warnings"] = result.warnings
+    _clear_saved_pictures()
+    st.session_state.update(state_from_rounds(config.rounds))
+    st.session_state["num_rounds"] = len(config.rounds)
+    # The same file also has the questions and answers section 4 needs; a picture
+    # round's images still need adding by hand below, the same as a manually added one.
+    st.session_state["questions_csv"] = text
 
 
 def compile_documents(config, parsed):
@@ -156,6 +188,21 @@ else:
 
 # 3. Rounds
 st.subheader("3. Rounds")
+with st.expander("📥 Import rounds from a file (optional)"):
+    st.caption(
+        "One row per question, like section 4 below, but with extra columns that build the rounds "
+        "themselves instead of just answering already-configured ones: **format** (Single Column, "
+        "Two Columns (Music), True/False, Multiple Choice, or Picture Round), **points** and **choices**. "
+        "A round's question count is however many rows it has. Importing replaces your current rounds "
+        "and fills in section 4 with this same file — a picture round's images still need adding below."
+    )
+    st.file_uploader("Upload a CSV, TSV, or spreadsheet export", type=["csv", "tsv", "txt"], key="rounds_upload", on_change=import_rounds_file)
+    if st.session_state.get("rounds_import_error"):
+        st.error(st.session_state["rounds_import_error"])
+    for message in st.session_state.get("rounds_import_warnings", []):
+        st.warning(message)
+    st.download_button("Download an example file", EXAMPLE_ROUNDS_CSV, "rounds_example.csv", "text/csv")
+
 num_rounds = st.number_input("How many rounds total?", min_value=1, max_value=MAX_ROUNDS, key="num_rounds")
 
 rounds = []
@@ -207,7 +254,8 @@ for i in range(int(num_rounds)):
 st.subheader("4. Questions and answers (optional)")
 st.caption(
     "Add your questions to get an answer key and a host script. Columns: round, number, question, answer, notes. "
-    "A round is its name or its position (1, 2, ...). Use TB or Bonus as the number for an extra question."
+    "A round is its name or its position (1, 2, ...). Use TB or Bonus as the number for an extra question. "
+    "(The same file can also build your rounds from scratch — see the importer in section 3 above.)"
 )
 st.file_uploader("Upload a CSV file", type=["csv", "tsv", "txt"], key="csv_upload", on_change=load_questions_file)
 st.text_area("...or paste rows here (a spreadsheet copies as tab-separated text, which works too)", key="questions_csv", height=170)
