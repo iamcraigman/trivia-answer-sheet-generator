@@ -1,7 +1,7 @@
 """Builds the print-ready HTML for the team answer sheets."""
 from html import escape
 
-from trivia_models import PAPERS
+from .models import PAPERS
 
 MARGIN_MM = 4
 MM_TO_PX = 96 / 25.4

@@ -3,12 +3,12 @@ import io
 import pytest
 from PIL import Image
 
-from trivia_html import generate_trivia_html, page_plan
-from trivia_images import to_data_uri
-from trivia_models import FORMATS, LAYOUTS, PAPERS, EventConfig, Round
+from trivia_kit.sheets import generate_trivia_html, page_plan
+from trivia_kit.images import to_data_uri
+from trivia_kit.models import FORMATS, LAYOUTS, PAPERS, EventConfig, Round
 
 try:
-    from trivia_pdf import build_pdf, html_to_pdf, pdf_to_pngs, render_document
+    from trivia_kit.pdf import build_pdf, html_to_pdf, pdf_to_pngs, render_document
 except (ImportError, OSError) as exc:  # WeasyPrint or its system libraries are missing
     pytest.skip(f"WeasyPrint unavailable: {exc}", allow_module_level=True)
 

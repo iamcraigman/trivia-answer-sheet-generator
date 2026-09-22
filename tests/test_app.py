@@ -6,14 +6,14 @@ import pytest
 pytest.importorskip("streamlit")
 
 try:
-    import trivia_pdf  # noqa: F401
+    import trivia_kit.pdf  # noqa: F401
 except (ImportError, OSError) as exc:
     pytest.skip(f"WeasyPrint unavailable: {exc}", allow_module_level=True)
 
 from streamlit.testing.v1 import AppTest
 
-from app_state import state_from_config
-from trivia_models import EventConfig, Round
+from trivia_kit.state import state_from_config
+from trivia_kit.models import EventConfig, Round
 
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
 DATA_URI = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAAP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=="

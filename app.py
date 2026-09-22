@@ -3,16 +3,16 @@ import json
 
 import streamlit as st
 
-from app_state import state_from_config
-from trivia_host import generate_answer_key_html, generate_host_script_html, generate_scoresheet_html
-from trivia_html import generate_trivia_html
-from trivia_images import LOGO_MAX_PX, PICTURE_MAX_PX, to_data_uri
-from trivia_models import (
+from trivia_kit.host import generate_answer_key_html, generate_host_script_html, generate_scoresheet_html
+from trivia_kit.images import LOGO_MAX_PX, PICTURE_MAX_PX, to_data_uri
+from trivia_kit.models import (
     EXTRAS, FORMATS, LAYOUTS, MAX_NAME_LEN, MAX_ROUNDS, MAX_TEAMS, PACKET_ORDERS, PAPERS,
     TEAM_MODES, EventConfig, Round,
 )
-from trivia_pdf import build_pdf, pdf_to_pngs
-from trivia_questions import parse_questions, template_csv
+from trivia_kit.pdf import build_pdf, pdf_to_pngs
+from trivia_kit.questions import parse_questions, template_csv
+from trivia_kit.sheets import generate_trivia_html
+from trivia_kit.state import state_from_config
 
 IMAGE_TYPES = ["png", "jpg", "jpeg", "gif", "webp"]
 PREVIEW_PAGES = 3

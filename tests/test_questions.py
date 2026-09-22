@@ -1,5 +1,5 @@
-from trivia_models import Round
-from trivia_questions import parse_questions, template_csv
+from trivia_kit.models import Round
+from trivia_kit.questions import parse_questions, template_csv
 
 ROUNDS = (Round("Geography", questions=2, extra="tiebreaker"), Round("Music", "music", 1))
 
