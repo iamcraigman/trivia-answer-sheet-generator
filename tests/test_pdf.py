@@ -37,6 +37,15 @@ def _tile():
     return to_data_uri(out.getvalue(), 300)
 
 
+def _verbose_mc_options(count, choices):
+    """Every question given its full 6 choices, each an unreasonably long
+    option, to stress-test the choice-row truncation budget."""
+    return tuple(
+        tuple(f"Verbose Answer Choice Number {j} For Question {i}" for j in range(choices))
+        for i in range(count)
+    )
+
+
 @pytest.mark.parametrize("layout", list(LAYOUTS))
 @pytest.mark.parametrize("paper", list(PAPERS))
 @pytest.mark.parametrize("team_mode", ["names", "tables"])
@@ -46,7 +55,11 @@ def test_worst_case_content_never_spills_onto_extra_pages(layout, paper, team_mo
     tile = _tile()
     most = LAYOUTS[layout].max_questions
     rounds = tuple(
-        Round("W" * 40, kind, most, 99, "tiebreaker" if i % 2 else "wager", 6, (tile,) * 20 if kind == "picture" else ())
+        Round(
+            "W" * 40, kind, most, 99, "tiebreaker" if i % 2 else "wager", 6,
+            images=(tile,) * 20 if kind == "picture" else (),
+            mc_options=_verbose_mc_options(most, 6) if kind == "choice" else (),
+        )
         for i, kind in enumerate(FORMATS)
     )
     config = EventConfig(

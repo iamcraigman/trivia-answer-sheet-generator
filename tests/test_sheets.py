@@ -1,6 +1,6 @@
 import pytest
 
-from trivia_kit.sheets import generate_trivia_html, page_plan, row_height
+from trivia_kit.sheets import _mc_option_budget, generate_trivia_html, page_plan, row_height
 from trivia_kit.models import EventConfig, Round
 
 
@@ -84,6 +84,59 @@ def test_rows_are_capped_and_never_below_the_minimum():
     assert row_height(cfg(Round("A")), 10) == 24                       # the original 4-up row height
     assert row_height(cfg(Round("A"), layout="1up"), 10) == 64
     assert row_height(cfg(Round("A")), 200) == 18
+
+
+class TestChoiceOptions:
+    def test_real_options_print_letter_and_text_instead_of_bare_circles(self):
+        rnd = Round("Q", "choice", 2, choices=4, mc_options=(("Lions", "Tigers", "Bears", "Oh My"), ()))
+        html = generate_trivia_html(cfg(rnd))
+        assert '<b>A</b> Lions' in html and '<b>D</b> Oh My' in html
+        assert html.count('class="q-ans q-choices"') == 4     # one per sheet on the 4-up layout
+
+    def test_a_question_without_options_falls_back_to_bare_circles(self):
+        rnd = Round("Q", "choice", 2, choices=4, mc_options=(("Lions", "Tigers", "Bears", "Oh My"), ()))
+        html = generate_trivia_html(cfg(rnd))
+        assert html.count('class="mark"') == 4 * 4        # question 2, on each of the 4 sheets, 4 bare letters
+
+    def test_no_mc_options_at_all_is_unchanged_from_before_the_feature(self):
+        html = generate_trivia_html(cfg(Round("Q", "choice", 3, choices=5)))
+        assert 'class="q-ans q-choices"' not in html
+        assert 'class="q-ans q-marks q-left"' not in html      # stays centered, matching pre-feature rendering
+        assert html.count('class="mark"') == 4 * 3 * 5
+
+    def test_a_gap_rows_bare_circles_left_align_when_siblings_have_real_options(self):
+        rnd = Round("Q", "choice", 2, choices=4, mc_options=(("Lions", "Tigers", "Bears", "Oh My"), ()))
+        html = generate_trivia_html(cfg(rnd))
+        assert html.count('class="q-ans q-marks q-left"') == 4     # question 2's gap row, on each of the 4 sheets
+
+    def test_options_beyond_the_rounds_choice_count_are_ignored(self):
+        rnd = Round("Q", "choice", 1, choices=2, mc_options=(("Lions", "Tigers", "Bears"),))
+        html = generate_trivia_html(cfg(rnd))
+        assert '<b>A</b> Lions' in html and '<b>B</b> Tigers' in html
+        assert "Bears" not in html
+
+    def test_option_text_is_escaped(self):
+        rnd = Round("Q", "choice", 1, mc_options=(("<script>x</script>", "safe"),))
+        html = generate_trivia_html(cfg(rnd))
+        assert "<script>x</script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_a_long_option_is_truncated_rather_than_left_to_overflow(self):
+        long_option = "A Very Long Answer Choice That Will Not Fit On One Line Of A Printed Row"
+        rnd = Round("Q", "choice", 1, choices=4, mc_options=((long_option, "short"),))
+        html = generate_trivia_html(cfg(rnd))
+        assert long_option not in html
+        assert "…" in html
+
+    def test_mc_option_budget_shrinks_as_more_choices_share_the_row(self):
+        config = cfg(Round("Q", "choice"))
+        few = _mc_option_budget(config, Round("Q", "choice", choices=2))
+        many = _mc_option_budget(config, Round("Q", "choice", choices=6))
+        assert few > many > 0
+
+    def test_mc_option_budget_is_never_negative_even_on_the_tightest_layout(self):
+        config = cfg(Round("Q", "choice"), layout="4up")
+        assert _mc_option_budget(config, Round("Q", "choice", choices=6)) >= 4
 
 
 class TestPagePlan:

@@ -11,6 +11,8 @@ MAX_ROUNDS = 10
 MAX_TEAMS = 40
 MAX_NAME_LEN = 40   # round names, team names, and each event text field
 MAX_IMAGES = 20     # pictures per picture round
+MAX_MC_OPTIONS = 6  # matches Round.choices' own ceiling
+MAX_MC_QUESTIONS = 30  # the largest max_questions across all layouts (1up)
 
 FORMATS = {
     "single": "Single Column",
@@ -66,6 +68,10 @@ class Round:
     extra: str = "none"
     choices: int = 4                 # multiple-choice rounds only
     images: tuple[str, ...] = ()     # picture rounds only, as data: URIs
+    # multiple-choice rounds only: mc_options[i] holds question (i+1)'s answer
+    # choices, up to `choices` of them; () for a question with none yet, which
+    # prints as plain lettered circles instead of the real choice text.
+    mc_options: tuple[tuple[str, ...], ...] = ()
 
     @property
     def max_points(self):
@@ -129,6 +135,7 @@ class EventConfig:
                     "extra": r.extra,
                     "choices": r.choices,
                     "images": list(r.images),
+                    "mc_options": [list(opts) for opts in r.mc_options],
                 }
                 for r in self.rounds
             ],
@@ -188,7 +195,23 @@ def _round_from_dict(data, max_questions, index):
         images=tuple(
             u for u in (_image(x) for x in (images if isinstance(images, list) else [])) if u
         )[:MAX_IMAGES],
+        mc_options=_mc_options(data.get("mc_options")),
     )
+
+
+def _mc_options(value):
+    """A list of per-question option lists, positionally preserved (a question
+    with none yet stays `()`, not dropped) so `mc_options[i]` still lines up
+    with question i+1 after clamping."""
+    if not isinstance(value, list):
+        return ()
+    result = []
+    for entry in value[:MAX_MC_QUESTIONS]:
+        if not isinstance(entry, list):
+            result.append(())
+            continue
+        result.append(tuple(o for o in (_text(x, MAX_NAME_LEN) for x in entry[:MAX_MC_OPTIONS]) if o))
+    return tuple(result)
 
 
 def _choice(value, options, default):
