@@ -60,7 +60,8 @@ Name That Tune,Two Columns (Music),2,1,Play clip 1,Bohemian Rhapsody - Queen,
 WeasyPrint requires certain underlying system libraries to render PDFs.
 - **macOS:** `brew install pango libffi`
 - **Linux:** Follow the [WeasyPrint Installation Guide](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html).
-- **Windows:** Install [MSYS2](https://www.msys2.org/) and then, from an MSYS2 shell, run `pacman -S mingw-w64-x86_64-pango`. The app looks for the libraries in `C:\msys64\mingw64\bin`. If MSYS2 lives elsewhere, set the `WEASYPRINT_DLL_DIRECTORIES` environment variable to its `mingw64\bin` folder before starting the app.
+- **Windows, with MSYS2:** Install [MSYS2](https://www.msys2.org/), keeping the default options. Then, in the **MSYS2 UCRT64** shell (not the plain MSYS2 shell), run `pacman -S mingw-w64-ucrt-x86_64-pango`. This matches WeasyPrint's current Windows instructions. The app looks for the libraries in `C:\msys64\ucrt64\bin`, falling back to `C:\msys64\mingw64\bin` for an install set up before WeasyPrint's docs moved to UCRT64. If MSYS2 lives elsewhere, set the `WEASYPRINT_DLL_DIRECTORIES` environment variable to its `bin` folder before starting the app.
+- **Windows, without MSYS2:** Download the `weasyprint-windows-onefile.zip` executable from the [WeasyPrint releases page](https://github.com/Kozea/WeasyPrint/releases) (pick the version matching `requirements.txt`), unzip it anywhere, and set the `WEASYPRINT_STANDALONE_EXE` environment variable to the `weasyprint.exe` inside it. It bundles its own copy of every native library, so nothing else needs installing. The app uses it automatically whenever the MSYS2-based import doesn't work; it's about 30MB and does everything the app needs, just a little slower per PDF than the library path. To check which one is active: `python -c "import trivia_kit.pdf; print(trivia_kit.pdf.backend())"`.
 
 ### 2. Install Python Packages & Run
 ```bash
@@ -83,7 +84,7 @@ The PDF and app tests are skipped automatically if WeasyPrint's system libraries
   - `host.py`: builds the scoresheet, answer key and host script HTML.
   - `questions.py`: parses the questions CSV, infers whole rounds from a file, and writes the templates.
   - `images.py`: shrinks and grayscales uploaded pictures for printing.
-  - `pdf.py`: renders HTML to PDF and pages to preview images, and sets up the Windows DLL lookup. It is the only module that needs WeasyPrint.
+  - `pdf.py`: renders HTML to PDF and pages to preview images, sets up the Windows DLL lookup, and falls back to the standalone executable when the library isn't available. It is the only module that needs WeasyPrint.
   - `state.py`: maps a saved setup onto the app's widget keys.
 - `tests/`: one test module per module above, plus `test_app.py` for the interface.
 
